@@ -9,6 +9,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -50,7 +52,6 @@ public class GlobalExceptionHandler {
                 .body(error);
     }
 
-
     /*
      * Regla de negocio
      * HTTP 409
@@ -73,7 +74,6 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.CONFLICT)
                 .body(error);
     }
-
 
     /*
      * Errores de @Valid
@@ -110,10 +110,8 @@ public class GlobalExceptionHandler {
                 .body(error);
     }
 
-
     /*
      * Parámetro de consulta con formato inválido
-     * (fecha mal formada, id no numérico, estado inexistente)
      * HTTP 400
      */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
@@ -143,9 +141,9 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.BAD_REQUEST)
                 .body(error);
     }
+
     /*
-     * Cuerpo JSON ilegible (sintaxis inválida, enum inexistente,
-     * tipo de dato equivocado)
+     * Cuerpo JSON ilegible
      * HTTP 400
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -167,12 +165,8 @@ public class GlobalExceptionHandler {
                 .body(error);
     }
 
-
     /*
-     * Violación de integridad en la base (unique, FK, check).
-     * Es la que salta cuando dos peticiones concurrentes pasan la
-     * validación del servicio y la restricción de la tabla es la que
-     * frena la segunda. No se expone el mensaje del driver.
+     * Violación de integridad en la base
      * HTTP 409
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
@@ -180,9 +174,11 @@ public class GlobalExceptionHandler {
             DataIntegrityViolationException ex,
             HttpServletRequest request) {
 
-        log.warn("Violación de integridad en {} | causa={}",
+        log.warn(
+                "Violación de integridad en {} | causa={}",
                 request.getRequestURI(),
-                ex.getMostSpecificCause().getMessage());
+                ex.getMostSpecificCause().getMessage()
+        );
 
         ErrorResponseDTO error = new ErrorResponseDTO(
                 LocalDateTime.now(),
@@ -199,18 +195,65 @@ public class GlobalExceptionHandler {
                 .body(error);
     }
 
+    /*
+     * Login fallido
+     * HTTP 401
+     */
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ErrorResponseDTO> handleAuthentication(
+            AuthenticationException ex,
+            HttpServletRequest request) {
+
+        log.warn(
+                "Autenticación fallida en {} | motivo={}",
+                request.getRequestURI(),
+                ex.getClass().getSimpleName()
+        );
+
+        ErrorResponseDTO error = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.UNAUTHORIZED.value(),
+                "Unauthorized",
+                "Usuario o contraseña incorrectos",
+                request.getRequestURI(),
+                null
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(error);
+    }
+
+    /*
+     * Acceso denegado por @PreAuthorize
+     * HTTP 403
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponseDTO> handleAccessDenied(
+            AccessDeniedException ex,
+            HttpServletRequest request) {
+
+        log.warn(
+                "Acceso denegado en {}",
+                request.getRequestURI()
+        );
+
+        ErrorResponseDTO error = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.FORBIDDEN.value(),
+                "Forbidden",
+                "No tiene permisos para realizar esta operación",
+                request.getRequestURI(),
+                null
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(error);
+    }
 
     /*
      * Cualquier otra excepción no contemplada.
-     *
-     * Las excepciones propias de Spring MVC (ruta inexistente 404,
-     * método no soportado 405, parámetro obligatorio ausente 400, ...)
-     * implementan ErrorResponse y traen su propio código de estado: se
-     * respeta ese código y solo se cambia el formato del cuerpo.
-     *
-     * Para el resto (NPE, fallo de conexión, ...) se registra la traza
-     * completa en el log y al cliente solo le llega un mensaje genérico
-     * con HTTP 500, sin filtrar detalles internos.
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseDTO> handleUnexpected(
@@ -219,31 +262,48 @@ public class GlobalExceptionHandler {
 
         if (ex instanceof ErrorResponse springError) {
 
-            HttpStatusCode status = springError.getStatusCode();
-            HttpStatus resolved = HttpStatus.resolve(status.value());
+            HttpStatusCode status =
+                    springError.getStatusCode();
 
-            ErrorResponseDTO error = new ErrorResponseDTO(
-                    LocalDateTime.now(),
-                    status.value(),
-                    resolved == null ? "Error" : resolved.getReasonPhrase(),
-                    springError.getBody().getDetail(),
-                    request.getRequestURI(),
-                    null
-            );
+            HttpStatus resolved =
+                    HttpStatus.resolve(
+                            status.value()
+                    );
 
-            return ResponseEntity.status(status).body(error);
+            ErrorResponseDTO error =
+                    new ErrorResponseDTO(
+                            LocalDateTime.now(),
+                            status.value(),
+                            resolved == null
+                                    ? "Error"
+                                    : resolved.getReasonPhrase(),
+                            springError
+                                    .getBody()
+                                    .getDetail(),
+                            request.getRequestURI(),
+                            null
+                    );
+
+            return ResponseEntity
+                    .status(status)
+                    .body(error);
         }
 
-        log.error("Error no controlado en {}", request.getRequestURI(), ex);
-
-        ErrorResponseDTO error = new ErrorResponseDTO(
-                LocalDateTime.now(),
-                HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                "Internal Server Error",
-                "Ocurrió un error inesperado. Intente nuevamente más tarde.",
+        log.error(
+                "Error no controlado en {}",
                 request.getRequestURI(),
-                null
+                ex
         );
+
+        ErrorResponseDTO error =
+                new ErrorResponseDTO(
+                        LocalDateTime.now(),
+                        HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                        "Internal Server Error",
+                        "Ocurrió un error inesperado. Intente nuevamente más tarde.",
+                        request.getRequestURI(),
+                        null
+                );
 
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
