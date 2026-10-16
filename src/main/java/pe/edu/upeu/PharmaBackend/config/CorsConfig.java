@@ -1,15 +1,18 @@
 package pe.edu.upeu.PharmaBackend.config;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.List;
 
 @Configuration
-public class CorsConfig implements WebMvcConfigurer {
+public class CorsConfig {
 
-    private final String[] origenesPermitidos;
+    private final List<String> origenesPermitidos;
 
     public CorsConfig(
             @Value("${app.cors.allowed-origins:"
@@ -19,29 +22,55 @@ public class CorsConfig implements WebMvcConfigurer {
                     + "http://localhost:3000}")
             String[] origenesPermitidos) {
 
-        this.origenesPermitidos = origenesPermitidos;
+        this.origenesPermitidos =
+                List.of(origenesPermitidos);
     }
 
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
 
-        registry.addMapping("/api/**")
-                .allowedOrigins(origenesPermitidos)
-                .allowedMethods(
+        CorsConfiguration config =
+                new CorsConfiguration();
+
+        config.setAllowedOrigins(
+                origenesPermitidos
+        );
+
+        config.setAllowedMethods(
+                List.of(
                         "GET",
                         "POST",
                         "PUT",
+                        "PATCH",
                         "DELETE",
                         "OPTIONS"
                 )
-                .allowedHeaders(
+        );
+
+        config.setAllowedHeaders(
+                List.of(
                         "Content-Type",
                         "Accept",
                         "Authorization",
                         "Origin"
                 )
-                .exposedHeaders("Location")
-                .allowCredentials(true)
-                .maxAge(3600);
+        );
+
+        config.setExposedHeaders(
+                List.of("Location")
+        );
+
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source =
+                new UrlBasedCorsConfigurationSource();
+
+        source.registerCorsConfiguration(
+                "/api/**",
+                config
+        );
+
+        return source;
     }
 }
