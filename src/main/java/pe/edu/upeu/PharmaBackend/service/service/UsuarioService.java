@@ -1,5 +1,7 @@
 package pe.edu.upeu.PharmaBackend.service.service;
 
+import pe.edu.upeu.PharmaBackend.dto.auth.AsignarRolesRequestDTO;
+import pe.edu.upeu.PharmaBackend.dto.auth.CambiarEstadoUsuarioRequestDTO;
 import pe.edu.upeu.PharmaBackend.dto.auth.EmpleadoResponseDTO;
 import pe.edu.upeu.PharmaBackend.dto.auth.RolResponseDTO;
 import pe.edu.upeu.PharmaBackend.dto.auth.UsuarioRequestDTO;
@@ -16,4 +18,16 @@ public interface UsuarioService {
     List<EmpleadoResponseDTO> listarEmpleados();
 
     List<RolResponseDTO> listarRoles();
+
+    UsuarioResponseDTO asignarRoles(
+            Long usuarioId,
+            String usernameActual,
+            AsignarRolesRequestDTO request
+    );
+
+    UsuarioResponseDTO cambiarEstado(
+            Long usuarioId,
+            String usernameActual,
+            CambiarEstadoUsuarioRequestDTO request
+    );
 }

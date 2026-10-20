@@ -6,6 +6,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upeu.PharmaBackend.dto.auth.AsignarRolesRequestDTO;
+import pe.edu.upeu.PharmaBackend.dto.auth.CambiarEstadoUsuarioRequestDTO;
 import pe.edu.upeu.PharmaBackend.dto.auth.EmpleadoResponseDTO;
 import pe.edu.upeu.PharmaBackend.dto.auth.RolResponseDTO;
 import pe.edu.upeu.PharmaBackend.dto.auth.UsuarioRequestDTO;
@@ -115,34 +117,7 @@ public class UsuarioServiceImpl implements UsuarioService {
         }
 
         List<Rol> roles =
-                rolRepository.findAllById(
-                        request.getRolIds()
-                );
-
-        if (roles.size()
-                != request.getRolIds().size()) {
-
-            Set<Long> encontrados =
-                    roles.stream()
-                            .map(Rol::getId)
-                            .collect(
-                                    Collectors.toSet()
-                            );
-
-            Set<Long> faltantes =
-                    new HashSet<>(
-                            request.getRolIds()
-                    );
-
-            faltantes.removeAll(
-                    encontrados
-            );
-
-            throw new RecursoNoEncontradoException(
-                    "Roles no encontrados: "
-                            + faltantes
-            );
-        }
+                buscarRoles(request.getRolIds());
 
         if (request
                 .getPassword()
@@ -157,9 +132,7 @@ public class UsuarioServiceImpl implements UsuarioService {
         Usuario usuario =
                 new Usuario();
 
-        usuario.setUsername(
-                username
-        );
+        usuario.setUsername(username);
 
         usuario.setPassword(
                 passwordEncoder.encode(
@@ -168,19 +141,13 @@ public class UsuarioServiceImpl implements UsuarioService {
         );
 
         usuario.setEstado(true);
-
-        usuario.setEmpleado(
-                empleado
-        );
-
+        usuario.setEmpleado(empleado);
         usuario.setRoles(
                 new HashSet<>(roles)
         );
 
         Usuario guardado =
-                usuarioRepository.save(
-                        usuario
-                );
+                usuarioRepository.save(usuario);
 
         log.info(
                 "Usuario registrado id={} usuario={} roles={}",
@@ -190,9 +157,7 @@ public class UsuarioServiceImpl implements UsuarioService {
         );
 
         return usuarioMapper
-                .toUsuarioResponse(
-                        guardado
-                );
+                .toUsuarioResponse(guardado);
     }
 
     @Override
@@ -251,5 +216,153 @@ public class UsuarioServiceImpl implements UsuarioService {
                         usuarioMapper::toRolResponse
                 )
                 .toList();
+    }
+
+    @Override
+    @Transactional
+    public UsuarioResponseDTO asignarRoles(
+            Long usuarioId,
+            String usernameActual,
+            AsignarRolesRequestDTO request) {
+
+        Usuario usuario =
+                usuarioRepository
+                        .findById(usuarioId)
+                        .orElseThrow(() ->
+                                new RecursoNoEncontradoException(
+                                        "Usuario no encontrado con id: "
+                                                + usuarioId
+                                )
+                        );
+
+        List<Rol> roles =
+                buscarRoles(request.getRolIds());
+
+        boolean esMismoUsuario =
+                usuario.getUsername()
+                        .equalsIgnoreCase(
+                                usernameActual
+                        );
+
+        boolean mantieneRolAdmin =
+                roles.stream()
+                        .anyMatch(rol ->
+                                "ADMIN".equalsIgnoreCase(
+                                        rol.getNombre()
+                                )
+                        );
+
+        if (esMismoUsuario
+                && !mantieneRolAdmin) {
+
+            throw new ReglaNegocioException(
+                    "Un ADMIN no puede quitarse a sí mismo el rol ADMIN"
+            );
+        }
+
+        usuario.setRoles(
+                new HashSet<>(roles)
+        );
+
+        Usuario guardado =
+                usuarioRepository.save(usuario);
+
+        log.info(
+                "Roles actualizados: usuario={} roles={}",
+                guardado.getUsername(),
+                usuarioMapper.nombresRoles(
+                        guardado.getRoles()
+                )
+        );
+
+        return usuarioMapper
+                .toUsuarioResponse(
+                        guardado
+                );
+    }
+
+    @Override
+    @Transactional
+    public UsuarioResponseDTO cambiarEstado(
+            Long usuarioId,
+            String usernameActual,
+            CambiarEstadoUsuarioRequestDTO request) {
+
+        Usuario usuario =
+                usuarioRepository
+                        .findById(usuarioId)
+                        .orElseThrow(() ->
+                                new RecursoNoEncontradoException(
+                                        "Usuario no encontrado con id: "
+                                                + usuarioId
+                                )
+                        );
+
+        boolean esMismoUsuario =
+                usuario.getUsername()
+                        .equalsIgnoreCase(
+                                usernameActual
+                        );
+
+        if (esMismoUsuario
+                && Boolean.FALSE.equals(
+                request.getEstado()
+        )) {
+
+            throw new ReglaNegocioException(
+                    "Un ADMIN no puede desactivarse a sí mismo"
+            );
+        }
+
+        usuario.setEstado(
+                request.getEstado()
+        );
+
+        Usuario guardado =
+                usuarioRepository.save(usuario);
+
+        log.info(
+                "Estado actualizado: usuario={} estado={}",
+                guardado.getUsername(),
+                guardado.getEstado()
+        );
+
+        return usuarioMapper
+                .toUsuarioResponse(
+                        guardado
+                );
+    }
+
+    private List<Rol> buscarRoles(
+            Set<Long> rolIds) {
+
+        List<Rol> roles =
+                rolRepository
+                        .findAllById(rolIds);
+
+        if (roles.size()
+                != rolIds.size()) {
+
+            Set<Long> encontrados =
+                    roles.stream()
+                            .map(Rol::getId)
+                            .collect(
+                                    Collectors.toSet()
+                            );
+
+            Set<Long> faltantes =
+                    new HashSet<>(rolIds);
+
+            faltantes.removeAll(
+                    encontrados
+            );
+
+            throw new RecursoNoEncontradoException(
+                    "Roles no encontrados: "
+                            + faltantes
+            );
+        }
+
+        return roles;
     }
 }
